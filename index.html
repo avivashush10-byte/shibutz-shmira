@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>שבצ"ק — שיבוץ לוחמים</title>
+  <meta name="theme-color" content="#3a3f24">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="שבצ&quot;ק">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- מסך כניסה (מופיע רק כשמוגדר קוד גישה, כלומר בענן) -->
+  <div id="authGate" class="auth-gate">
+    <div class="auth-box">
+      <div class="auth-logo">🎖️</div>
+      <h1>שבצ"ק</h1>
+      <p id="authSubtitle">הזן קוד גישה כדי להיכנס</p>
+      <input type="password" id="authInput" placeholder="קוד גישה" autocomplete="off">
+      <button class="btn primary" id="authSubmit">כניסה</button>
+      <p class="auth-err" id="authErr"></p>
+      <p class="auth-hint" id="authHint">רק מי שקיבל את הקוד ממך יכול להיכנס.</p>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎖️</span>
+      <div>
+        <h1>שבצ"ק</h1>
+        <p class="subtitle">שיבוץ לוחמים בעמדות שמירה ומשימות</p>
+      </div>
+    </div>
+    <div class="save-status" id="saveStatus">נשמר ✓</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="setup">⚙️ הגדרות</button>
+    <button class="tab" data-tab="schedule">📋 שיבוץ</button>
+    <button class="tab" data-tab="stats">📊 סטטיסטיקות</button>
+  </nav>
+
+  <main>
+    <!-- ============ טאב הגדרות ============ -->
+    <section class="tab-panel active" id="tab-setup">
+      <div class="grid-2">
+        <!-- טווח זמן -->
+        <div class="card">
+          <h2>🕐 טווח הזמן של הסבב</h2>
+          <div class="field">
+            <label>תאריך ושעת התחלה</label>
+            <input type="datetime-local" id="startDateTime">
+          </div>
+          <div class="field">
+            <label>משך הסבב (בשעות)</label>
+            <input type="number" id="durationHours" min="1" max="720" value="24">
+            <small class="hint">לדוגמה: 24 = יממה, 48 = יומיים, 72 = 3 ימים</small>
+          </div>
+          <div class="field">
+            <label>מנוחה מינימלית בין משמרות (שעות)</label>
+            <input type="number" id="restHours" min="0" max="24" step="0.5" value="8">
+            <small class="hint">ברירת מחדל 8 שעות. לוחם לא ירד משמירה ויעלה מיד לעמדה אחרת.</small>
+          </div>
+          <div class="field">
+            <label>הגדרת שעות לילה (לצורך הוגנות בסטטיסטיקה)</label>
+            <div class="inline">
+              <span>מ־</span>
+              <input type="number" id="nightStart" min="0" max="23" value="22" class="mini">
+              <span>עד</span>
+              <input type="number" id="nightEnd" min="0" max="23" value="6" class="mini">
+            </div>
+          </div>
+        </div>
+
+        <!-- לוחמים -->
+        <div class="card">
+          <h2>👥 לוחמים <span class="counter" id="soldierCounter">0</span></h2>
+          <div class="field">
+            <label>הוספת לוחמים (שם אחד בכל שורה)</label>
+            <textarea id="bulkSoldiers" rows="4" placeholder="דני כהן&#10;יוסי לוי&#10;משה פרץ"></textarea>
+            <button class="btn small" id="addBulkSoldiers">+ הוסף לרשימה</button>
+          </div>
+          <ul class="chip-list" id="soldierList"></ul>
+          <p class="hint" id="presentSummary"></p>
+        </div>
+      </div>
+
+      <!-- שיתוף -->
+      <div class="card">
+        <h2>📤 שיתוף האפליקציה</h2>
+        <p class="hint">שלח לחבר את הלינק והוא יוכל לפתוח ולהשתמש באפליקציה מהטלפון או מהמחשב.</p>
+        <div id="shareLinks" class="share-links"></div>
+        <div class="inline" style="flex-wrap:wrap">
+          <button class="btn whatsapp" id="btnShareApp">📱 שלח לינק בוואטסאפ</button>
+          <button class="btn ghost small" id="btnRefreshShare">↻ רענן קישורים</button>
+        </div>
+        <p class="hint">💡 בטלפון: פותחים את הלינק בדפדפן ← תפריט ← "הוסף למסך הבית" כדי לקבל אייקון של האפליקציה.</p>
+      </div>
+
+      <!-- עמדות ומשימות -->
+      <div class="card">
+        <h2>🎯 עמדות שמירה ומשימות <span class="counter" id="posCounter">0</span></h2>
+        <div class="pos-add-row">
+          <input type="text" id="posName" placeholder="שם העמדה / המשימה (למשל: שער ראשי)">
+          <select id="posType">
+            <option value="עמדה">עמדת שמירה</option>
+            <option value="משימה">משימה</option>
+          </select>
+          <label class="inline-label">אורך משמרת (שעות)
+            <input type="number" id="posShiftLen" min="0.5" max="24" step="0.5" value="2" class="mini">
+          </label>
+          <label class="inline-label">לוחמים במקביל
+            <input type="number" id="posCount" min="1" max="20" value="1" class="mini">
+          </label>
+          <button class="btn" id="addPos">+ הוסף</button>
+        </div>
+        <div class="table-wrap">
+          <table class="pos-table" id="posTable">
+            <thead>
+              <tr><th>שם</th><th>סוג</th><th>אורך משמרת</th><th>לוחמים/משמרת</th><th>משמרות בסבב</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ טאב שיבוץ ============ -->
+    <section class="tab-panel" id="tab-schedule">
+      <div class="actions-bar">
+        <button class="btn primary" id="btnGenerate">⚡ צור שיבוץ אוטומטי</button>
+        <button class="btn" id="btnRegenKeepManual">↻ צור מחדש (שמור עדכונים ידניים)</button>
+        <button class="btn ghost" id="btnClearSchedule">🗑️ נקה שיבוץ</button>
+        <span class="spacer"></span>
+        <button class="btn whatsapp" id="btnWhatsAppAll">📱 שלח שבצ"ק בוואטסאפ</button>
+        <button class="btn whatsapp ghost" id="btnWhatsAppSoldier">📱 שבצ"ק אישי ללוחם</button>
+        <button class="btn ok" id="btnArchive">💾 שמור סבב להיסטוריה</button>
+      </div>
+
+      <div id="warningsBox"></div>
+
+      <div class="schedule-legend">
+        <span><i class="sw sw-auto"></i> שיבוץ אוטומטי</span>
+        <span><i class="sw sw-manual"></i> עדכון ידני</span>
+        <span><i class="sw sw-violation"></i> מנוחה מתחת למינימום</span>
+        <span><i class="sw sw-empty"></i> לא מאויש</span>
+      </div>
+
+      <div class="table-wrap" id="scheduleWrap">
+        <p class="empty-state">עדיין אין שיבוץ. הגדר עמדות ולוחמים ולחץ "צור שיבוץ אוטומטי".</p>
+      </div>
+    </section>
+
+    <!-- ============ טאב סטטיסטיקות ============ -->
+    <section class="tab-panel" id="tab-stats">
+      <div class="actions-bar">
+        <div class="field inline-field">
+          <label>מקור הנתונים</label>
+          <select id="statsSource">
+            <option value="current">השיבוץ הנוכחי</option>
+            <option value="all">כל ההיסטוריה השמורה</option>
+          </select>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnExportStats">⬇️ ייצוא CSV</button>
+        <button class="btn danger ghost" id="btnClearHistory">מחק היסטוריה</button>
+      </div>
+      <div id="statsSummary" class="stats-cards"></div>
+      <div class="table-wrap">
+        <table class="stats-table" id="statsTable">
+          <thead>
+            <tr>
+              <th>לוחם</th>
+              <th>סטטוס</th>
+              <th>סה"כ שעות</th>
+              <th>מס' משמרות</th>
+              <th>עמדות/משימות שונות</th>
+              <th>שמירות לילה</th>
+              <th>שמירות יום</th>
+              <th>מנוחה קצרה</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="historyList" class="history-list"></div>
+    </section>
+  </main>
+
+  <!-- מודאל הגבלות עמדה ללוחם -->
+  <div class="modal-overlay" id="blockModal">
+    <div class="modal">
+      <h3 id="blockModalTitle">הגבלות עמדה</h3>
+      <p class="hint">סמן עמדות/משימות שהלוחם <strong>לא יכול</strong> לאייש (למשל מפקד שלא נכנס לעמדה מסוימת). המנוע לא ישבץ אותו אליהן.</p>
+      <div id="blockModalList" class="block-list"></div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="blockModalCancel">ביטול</button>
+        <button class="btn primary" id="blockModalSave">שמור</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- מודאל עדכון ידני -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <h3 id="editModalTitle">עדכון ידני</h3>
+      <p id="editModalInfo" class="hint"></p>
+      <div class="field">
+        <label>בחר לוחם למשמרת זו</label>
+        <select id="editModalSelect"></select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="editModalClear">רוקן משבצת</button>
+        <span class="spacer"></span>
+        <button class="btn" id="editModalCancel">ביטול</button>
+        <button class="btn primary" id="editModalSave">שמור</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

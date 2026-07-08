@@ -1,0 +1,14 @@
+{
+  "name": "שבצ\"ק — שיבוץ לוחמים",
+  "short_name": "שבצ\"ק",
+  "description": "שיבוץ לוחמים בעמדות שמירה ומשימות",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f4f1e4",
+  "theme_color": "#3a3f24",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

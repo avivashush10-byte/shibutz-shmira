@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#3a3f24"/>
+  <rect x="56" y="56" width="400" height="400" rx="64" fill="#5a6234"/>
+  <circle cx="256" cy="196" r="96" fill="#e8c23a"/>
+  <circle cx="256" cy="196" r="96" fill="none" stroke="#3a3f24" stroke-width="10"/>
+  <path d="M256 150 l14 29 32 5 -23 22 5 32 -28 -15 -28 15 5 -32 -23 -22 32 -5z" fill="#3a3f24"/>
+  <rect x="196" y="286" width="52" height="150" fill="#c99a1a"/>
+  <rect x="264" y="286" width="52" height="150" fill="#e8c23a"/>
+  <text x="256" y="472" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#f4f1e4" text-anchor="middle">שבצ״ק</text>
+</svg>
