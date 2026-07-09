@@ -66,6 +66,8 @@ const fmtTime = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${p
 const fmtDate = ms => { const d = new Date(ms); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`; };
 const dayNames = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 const fmtDay = ms => dayNames[new Date(ms).getDay()];
+// המרת חותמת זמן לפורמט של שדה datetime-local (זמן מקומי)
+const toLocalInput = ms => new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 function isNightHour(hour) {
   const s = +state.config.nightStart, e = +state.config.nightEnd;
@@ -167,6 +169,19 @@ function generateSchedule(keepManual) {
     Object.keys(h.pos).forEach(pn => pos[pn] = h.pos[pn] * HIST_W);
     tr[s.id] = { hours: h.hours * HIST_W, shifts: h.shifts * HIST_W, nights: h.nights * HIST_W, pos, intervals: [] };
   });
+
+  // === המשכיות בין סבבים ===
+  // משמרות מסבבים קודמים שהסתיימו סמוך לתחילת הסבב הנוכחי נכנסות לחישוב המנוחה בלבד
+  // (השעות/הלילות כבר נספרו דרך historyTallies), כדי שלוחם לא ירד ממשמרת ויעלה מיד בסבב החדש.
+  const nightH = state.config.standbyRestNight != null ? +state.config.standbyRestNight : 3;
+  const carryFrom = state._startMs - Math.max(restMs, 12 * HOUR);
+  state.history.forEach(h => (h.slots || []).forEach(hs => {
+    if (!(hs.end > carryFrom && hs.end <= state._startMs)) return;
+    const s = present.find(x => x.name === hs.name);
+    if (!s || !tr[s.id]) return;
+    const req = hs.standby ? (slotIsNight(hs.start, hs.end) ? nightH * HOUR : 0) : restMs;
+    tr[s.id].intervals.push({ start: hs.start, end: hs.end, pos: hs.pos, req });
+  }));
 
   // הזרקת שיבוצים קיימים (ידניים ששומרו) לטראקר — נספרים במלוא המשקל
   Object.values(slots).forEach(sl => {
@@ -666,12 +681,13 @@ function exportCSV() {
 }
 
 /* ================= שמירת סבב להיסטוריה ================= */
-function archiveCurrent() {
-  if (!state.schedule) { alert('אין שיבוץ לשמירה.'); return; }
+function archiveCurrent(silent) {
+  if (!state.schedule) { if (!silent) alert('אין שיבוץ לשמירה.'); return false; }
   const slots = Object.values(state.schedule.slots).filter(s => s.soldierId).map(sl => {
     const so = state.soldiers.find(x => x.id === sl.soldierId);
     const p = state.positions.find(x => x.id === sl.posId);
-    return { start: sl.start, end: sl.end, name: so ? so.name : '?', pos: p ? p.name : '?', violation: !!sl.violation };
+    // standby נשמר כדי שהמשכיות המנוחה בין סבבים תדע שזו הייתה כוננות (מנוחה מוקלת)
+    return { start: sl.start, end: sl.end, name: so ? so.name : '?', pos: p ? p.name : '?', standby: isStandbyPos(sl.posId), violation: !!sl.violation };
   });
   const label = `${fmtDate(state.schedule.startMs)} ${fmtTime(state.schedule.startMs)} — ${fmtDate(state.schedule.endMs)} ${fmtTime(state.schedule.endMs)}`;
   state.history.push({
@@ -680,8 +696,23 @@ function archiveCurrent() {
     soldiers: state.soldiers.map(s => ({ name: s.name, present: s.present })),
     slots,
   });
+  if (!silent) { commit(); alert('הסבב נשמר להיסטוריה ✓'); }
+  return true;
+}
+
+/* ================= המשך לסבב הבא (המשכיות רציפה) ================= */
+function continueRound() {
+  if (!state.schedule) { alert('אין סבב נוכחי. צור שיבוץ תחילה, ואז תוכל להמשיך ממנו.'); return; }
+  const endMs = state.schedule.endMs;
+  const msg = 'הסבב הנוכחי יישמר להיסטוריה, וייווצר סבב חדש שמתחיל בדיוק בסיומו.\n\n' +
+    'ההמשכיות תישמר: מי שירד ממשמרת בסוף הסבב יקבל מנוחה, והסבב בעמדות/משימות ימשיך לפי ההיסטוריה.\n' +
+    '(לוחמים חסרים לא ישובצו; עדכונים ידניים בסבב הקודם כבר נשמרו בהיסטוריה.)\n\nלהמשיך?';
+  if (!confirm(msg)) return;
+  archiveCurrent(true);                      // שומר את הסבב הנוכחי (בשקט)
+  state.config.startDateTime = toLocalInput(endMs); // הסבב החדש מתחיל בדיוק בסיום הקודם
+  generateSchedule(false);                   // המנוע מתחשב בהיסטוריה + במנוחה שנגררת מהסבב הקודם
   commit();
-  alert('הסבב נשמר להיסטוריה ✓');
+  alert(`נוצר סבב חדש בהמשך לקודם ✓\nמתחיל: ${fmtDay(endMs)} ${fmtDate(endMs)} ${fmtTime(endMs)}`);
 }
 
 /* ================= commit — רינדור + שמירה ================= */
@@ -751,7 +782,8 @@ function bindEvents() {
     const idx = parseInt(ans, 10) - 1;
     if (idx >= 0 && idx < list.length) openWhatsApp(soldierToText(list[idx].id));
   };
-  $('btnArchive').onclick = archiveCurrent;
+  $('btnContinueRound').onclick = continueRound;
+  $('btnArchive').onclick = () => archiveCurrent(false);
 
   // מודאל עדכון ידני
   $('editModalSave').onclick = saveEditModal;
