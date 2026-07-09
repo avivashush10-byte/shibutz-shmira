@@ -178,9 +178,11 @@ function generateSchedule(keepManual) {
     T.pos[pn] = (T.pos[pn] || 0) + 1;
   });
 
-  // כל המשבצות הריקות לפי סדר זמן
+  // סדר השיבוץ: קודם עמדות/משימות רגילות (ש.ג וכו'), ואחר כך כיתת כוננות.
+  // כך העמדות התובעניות מקבלות עדיפות מכל מצבת הלוחמים, והכוננות משמשת מאגר גמיש
+  // שסופג את מי שפנוי — כלומר מי שיורד מעמדה זמין לכוננות, ולוחם מהכוננות זמין לעמדה.
   const empties = Object.values(slots).filter(sl => !sl.soldierId)
-    .sort((a, b) => a.start - b.start || a.posId.localeCompare(b.posId) || a.seat - b.seat);
+    .sort((a, b) => (isStandbyPos(a.posId) - isStandbyPos(b.posId)) || a.start - b.start || a.posId.localeCompare(b.posId) || a.seat - b.seat);
 
   for (const sl of empties) {
     const pn = posName(sl.posId), night = slotIsNight(sl.start, sl.end);
@@ -258,7 +260,9 @@ function recomputeFlags() {
 function computeIssues() {
   const slots = Object.values(state.schedule.slots);
   const total = slots.length;
-  const unfilled = slots.filter(s => !s.soldierId).length;
+  // חוסר "אמיתי" = עמדה/משימה שאינה מאויישת. משבצת כוננות ריקה אינה חוסר — הכוננות גמישה.
+  const unfilled = slots.filter(s => !s.soldierId && !isStandbyPos(s.posId)).length;
+  const unfilledStandby = slots.filter(s => !s.soldierId && isStandbyPos(s.posId)).length;
   const restViol = slots.filter(s => s.soldierId && s.violation && !s.overlap).length;
   const overlaps = slots.filter(s => s.overlap).length;
   const absentMap = {}; state.soldiers.forEach(s => absentMap[s.id] = !s.present);
@@ -271,7 +275,7 @@ function computeIssues() {
   needed = Math.ceil(needed);
   const presentCount = state.soldiers.filter(s => s.present).length;
 
-  return { total, unfilled, restViol, overlaps, absentAssigned, needed, presentCount };
+  return { total, unfilled, unfilledStandby, restViol, overlaps, absentAssigned, needed, presentCount };
 }
 
 function renderWarnings() {
@@ -298,6 +302,8 @@ function renderWarnings() {
     html.push(`<div class="warn warn-y"><span class="ic">🌙</span><div><strong>${i.restViol} משבצות עם מנוחה מתחת ל־${state.config.restHours} שעות</strong>שובצו בכל זאת עקב חוסר/עומס (מסומן באדום בטבלה).</div></div>`);
   if (i.absentAssigned > 0)
     html.push(`<div class="warn err"><span class="ic">🚫</span><div><strong>${i.absentAssigned} משבצות עם לוחם שסומן כחסר</strong>שנה אותו לנוכח או עדכן ידנית את המשבצת.</div></div>`);
+  if (i.unfilledStandby > 0)
+    html.push(`<div class="warn good"><span class="ic">🚨</span><div><strong>${i.unfilledStandby} משבצות כוננות פתוחות — וזה תקין</strong>כיתת הכוננות היא מאגר גמיש; העמדות אויישו קודם, ומי שפנוי זמין לכוננות (ומהכוננות אפשר לשלוף לעמדה בעת הצורך).</div></div>`);
 
   if (suggestions.length)
     html.push(`<div class="warn warn-y"><span class="ic">💡</span><div><strong>פתרונות אפשריים</strong><ul>${suggestions.map(s => `<li>${s}</li>`).join('')}</ul></div></div>`);
