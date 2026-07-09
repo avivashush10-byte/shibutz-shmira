@@ -10,7 +10,7 @@ function defaultState() {
   now.setMinutes(0, 0, 0);
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   return {
-    config: { startDateTime: local, durationHours: 24, restHours: 8, nightStart: 22, nightEnd: 6 },
+    config: { startDateTime: local, durationHours: 24, restHours: 8, nightStart: 22, nightEnd: 6, standbyRestNight: 3 },
     soldiers: [],
     positions: [],
     schedule: null,
@@ -74,6 +74,19 @@ function isNightHour(hour) {
 // סיווג משמרת כ"לילה" לפי אמצע המשמרת (מדויק יותר משעת ההתחלה)
 function slotIsNight(start, end) {
   return isNightHour(new Date(start + (end - start) / 2).getHours());
+}
+// כיתת כוננות
+function isStandbyPos(posId) {
+  const p = state.positions.find(x => x.id === posId);
+  return !!(p && p.type === 'כיתת כוננות');
+}
+// דרישת המנוחה (מילישניות) של משמרת: עמדה/משימה רגילה = מנוחה מלאה; כוננות = הרבה פחות
+// (כוננות יום כמעט ללא מנוחה; כוננות לילה מינימום 2-3 שעות)
+const STANDBY_REST_DAY_H = 0; // כוננות יום — לא צריך מנוחה מיוחדת
+function slotRestMs(sl) {
+  if (!isStandbyPos(sl.posId)) return (+state.config.restHours) * HOUR;
+  const nightH = state.config.standbyRestNight != null ? +state.config.standbyRestNight : 3;
+  return (slotIsNight(sl.start, sl.end) ? nightH : STANDBY_REST_DAY_H) * HOUR;
 }
 // מאזני היסטוריה לכל לוחם (לפי שם) — לצורך הוגנות בין סבבים
 function historyTallies() {
@@ -160,7 +173,7 @@ function generateSchedule(keepManual) {
     const T = tr[sl.soldierId];
     if (!sl.soldierId || !T) return;
     const pn = posName(sl.posId), night = slotIsNight(sl.start, sl.end);
-    T.intervals.push({ start: sl.start, end: sl.end, pos: pn });
+    T.intervals.push({ start: sl.start, end: sl.end, pos: pn, req: slotRestMs(sl) });
     T.hours += (sl.end - sl.start) / HOUR; T.shifts += 1; if (night) T.nights += 1;
     T.pos[pn] = (T.pos[pn] || 0) + 1;
   });
@@ -175,22 +188,29 @@ function generateSchedule(keepManual) {
     const pool = present.filter(s => !(s.blocked || []).includes(sl.posId) && !tr[s.id].intervals.some(a => a.start < sl.end && a.end > sl.start));
     if (pool.length === 0) continue; // חוסר — נשארת ריקה
 
+    const slotReqMs = slotRestMs(sl); // דרישת המנוחה של המשבצת הנוכחית (כוננות = פחות)
     const scored = pool.map(s => {
       const T = tr[s.id];
-      // פער מנוחה לשני הכיוונים + עמדה אחרונה לפני משבצת זו
-      let gap = Infinity, lastPos = null, lastEnd = -Infinity;
+      // פער מנוחה + חוסר-מנוחה חמור ביותר מול השכנים. הדרישה לכל צמד = המינימום בין שתי המשמרות
+      // (אם אחת מהן כוננות — המעבר קל, כי כוננות עצמה נחשבת מנוחה)
+      let minGap = Infinity, worstShortMs = 0, lastPos = null, lastEnd = -Infinity;
       T.intervals.forEach(a => {
-        if (a.end <= sl.start) { gap = Math.min(gap, sl.start - a.end); if (a.end > lastEnd) { lastEnd = a.end; lastPos = a.pos; } }
-        if (a.start >= sl.end) gap = Math.min(gap, a.start - sl.end);
+        let g = null;
+        if (a.end <= sl.start) { g = sl.start - a.end; if (a.end > lastEnd) { lastEnd = a.end; lastPos = a.pos; } }
+        else if (a.start >= sl.end) { g = a.start - sl.end; }
+        if (g == null) return;
+        minGap = Math.min(minGap, g);
+        const reqPair = Math.min(slotReqMs, a.req != null ? a.req : restMs);
+        if (g < reqPair) worstShortMs = Math.max(worstShortMs, reqPair - g);
       });
       // עלות משוקללת — נמוך=עדיף
       let cost = HOURS_W * T.hours + SHIFT_W * T.shifts + POS_W * (T.pos[pn] || 0);
       if (night) cost += NIGHT_W * T.nights;      // איזון לילות מופעל רק במשמרת לילה
       if (lastPos === pn) cost += REPEAT_W;        // הימנעות מחזרה מיידית לאותה עמדה
-      // קנס מנוחה: פעיל רק כשאין ברירה ומשבצים מתחת למינימום — ממקסם את פער המנוחה
-      if (gap < restMs) cost += REST_W * (restMs - gap) / HOUR;
+      // קנס מנוחה: פעיל רק כשמשבצים מתחת למינימום הנדרש — ממקסם את פער המנוחה
+      if (worstShortMs > 0) cost += REST_W * worstShortMs / HOUR;
       cost += Math.random() * 0.5;                 // שובר-שוויון אקראי (מונע הטיה קבועה)
-      return { s, gap, cost, restOk: gap >= restMs };
+      return { s, gap: minGap, cost, restOk: worstShortMs === 0 };
     });
 
     const rested = scored.filter(x => x.restOk);
@@ -201,7 +221,7 @@ function generateSchedule(keepManual) {
     // עדכון הטראקר
     sl.soldierId = pick.s.id;
     const T = tr[pick.s.id];
-    T.intervals.push({ start: sl.start, end: sl.end, pos: pn });
+    T.intervals.push({ start: sl.start, end: sl.end, pos: pn, req: slotReqMs });
     T.hours += (sl.end - sl.start) / HOUR; T.shifts += 1; if (night) T.nights += 1;
     T.pos[pn] = (T.pos[pn] || 0) + 1;
   }
@@ -213,7 +233,6 @@ function generateSchedule(keepManual) {
 /* חישוב מחדש של דגלי חריגה (מנוחה קצרה / כפילות) — נקרא גם אחרי עדכון ידני */
 function recomputeFlags() {
   if (!state.schedule) return;
-  const restMs = +state.config.restHours * HOUR;
   const slots = state.schedule.slots;
   const byS = {};
   Object.values(slots).forEach(sl => {
@@ -227,7 +246,8 @@ function recomputeFlags() {
         if (o.start < sl.end && o.end > sl.start) { sl.overlap = true; sl.violation = true; }
         else {
           const gap = o.end <= sl.start ? sl.start - o.end : o.start - sl.end;
-          if (gap < restMs) sl.violation = true;
+          const reqPair = Math.min(slotRestMs(sl), slotRestMs(o)); // כוננות מקילה על דרישת המנוחה
+          if (gap < reqPair) sl.violation = true;
         }
       }
     }
@@ -296,6 +316,7 @@ function renderSetup() {
   $('restHours').value = c.restHours;
   $('nightStart').value = c.nightStart;
   $('nightEnd').value = c.nightEnd;
+  $('standbyRestNight').value = c.standbyRestNight != null ? c.standbyRestNight : 3;
 
   // לוחמים
   state.soldiers.forEach(s => { if (!Array.isArray(s.blocked)) s.blocked = []; }); // נירמול
@@ -343,7 +364,7 @@ function renderSchedule() {
   const slots = state.schedule.slots;
   const soldierName = id => { const s = state.soldiers.find(x => x.id === id); return s ? s.name : '—'; };
   const isAbsent = id => { const s = state.soldiers.find(x => x.id === id); return s ? !s.present : false; };
-  const typeIcon = t => t === 'משימה' ? '🎯' : '🛡️';
+  const typeIcon = t => t === 'משימה' ? '🎯' : t === 'כיתת כוננות' ? '🚨' : '🛡️';
 
   let html = '<div class="pos-board">';
   state.positions.forEach(p => {
@@ -644,6 +665,7 @@ function bindEvents() {
   bindCfg('restHours', 'restHours', true);
   bindCfg('nightStart', 'nightStart', true);
   bindCfg('nightEnd', 'nightEnd', true);
+  bindCfg('standbyRestNight', 'standbyRestNight', true);
 
   // לוחמים
   $('addBulkSoldiers').onclick = () => {

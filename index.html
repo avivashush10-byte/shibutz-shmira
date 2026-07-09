@@ -67,6 +67,11 @@
             <small class="hint">ברירת מחדל 8 שעות. לוחם לא ירד משמירה ויעלה מיד לעמדה אחרת.</small>
           </div>
           <div class="field">
+            <label>מנוחה מינימלית לכיתת כוננות בלילה (שעות)</label>
+            <input type="number" id="standbyRestNight" min="0" max="12" step="0.5" value="3">
+            <small class="hint">🚨 כיתת כוננות לא צריכה מנוחה מלאה. ביום — כמעט ללא מנוחה; בלילה — לפחות מספר השעות הזה.</small>
+          </div>
+          <div class="field">
             <label>הגדרת שעות לילה (לצורך הוגנות בסטטיסטיקה)</label>
             <div class="inline">
               <span>מ־</span>
@@ -110,6 +115,7 @@
           <select id="posType">
             <option value="עמדה">עמדת שמירה</option>
             <option value="משימה">משימה</option>
+            <option value="כיתת כוננות">כיתת כוננות</option>
           </select>
           <label class="inline-label">אורך משמרת (שעות)
             <input type="number" id="posShiftLen" min="0.5" max="24" step="0.5" value="2" class="mini">
