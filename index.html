@@ -198,6 +198,39 @@
     </section>
   </main>
 
+  <!-- מודאל עריכת עמדה/משימה -->
+  <div class="modal-overlay" id="posModal">
+    <div class="modal">
+      <h3>✏️ עריכת עמדה / משימה</h3>
+      <div class="field">
+        <label>שם</label>
+        <input type="text" id="posEditName">
+      </div>
+      <div class="field">
+        <label>סוג</label>
+        <select id="posEditType">
+          <option value="עמדה">🛡️ עמדת שמירה</option>
+          <option value="משימה">🎯 משימה</option>
+          <option value="כיתת כוננות">🚨 כיתת כוננות</option>
+        </select>
+        <small class="hint">בחירת "כיתת כוננות" מפעילה את כללי הכוננות: מנוחה מוקלת, מאגר גמיש, ובלי סימון "מנוחה קצרה" בחילופים.</small>
+      </div>
+      <div class="inline">
+        <label class="inline-label">אורך משמרת (שעות)
+          <input type="number" id="posEditShiftLen" min="0.5" max="24" step="0.5" class="mini">
+        </label>
+        <label class="inline-label">לוחמים במקביל
+          <input type="number" id="posEditCount" min="1" max="20" class="mini">
+        </label>
+      </div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="posEditCancel">ביטול</button>
+        <button class="btn primary" id="posEditSave">שמור</button>
+      </div>
+    </div>
+  </div>
+
   <!-- מודאל הגבלות עמדה ללוחם -->
   <div class="modal-overlay" id="blockModal">
     <div class="modal">

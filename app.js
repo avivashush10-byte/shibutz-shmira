@@ -351,9 +351,11 @@ function renderSetup() {
   const tb = $('posTable').querySelector('tbody'); tb.innerHTML = '';
   state.positions.forEach(p => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${p.name}</td><td>${p.type}</td><td>${p.shiftLen} ש'</td><td>${p.count}</td><td>${(p._shifts || []).length}</td>
-      <td><button class="icon-btn" title="מחק">🗑️</button></td>`;
-    tr.querySelector('.icon-btn').onclick = () => {
+    const icon = p.type === 'משימה' ? '🎯' : p.type === 'כיתת כוננות' ? '🚨' : '🛡️';
+    tr.innerHTML = `<td>${p.name}</td><td>${icon} ${p.type}</td><td>${p.shiftLen} ש'</td><td>${p.count}</td><td>${(p._shifts || []).length}</td>
+      <td><button class="icon-btn edit-pos" title="ערוך">✏️</button> <button class="icon-btn del-pos" title="מחק">🗑️</button></td>`;
+    tr.querySelector('.edit-pos').onclick = () => openPosModal(p.id);
+    tr.querySelector('.del-pos').onclick = () => {
       state.positions = state.positions.filter(x => x.id !== p.id);
       state.soldiers.forEach(s => { if (Array.isArray(s.blocked)) s.blocked = s.blocked.filter(id => id !== p.id); });
       commit();
@@ -472,6 +474,42 @@ function saveBlockModal() {
   commit();
   closeBlockModal();
 }
+
+/* ================= מודאל עריכת עמדה/משימה ================= */
+let editingPosId = null;
+function openPosModal(id) {
+  const p = state.positions.find(x => x.id === id);
+  if (!p) return;
+  editingPosId = id;
+  $('posEditName').value = p.name;
+  $('posEditType').value = p.type;
+  $('posEditShiftLen').value = p.shiftLen;
+  $('posEditCount').value = p.count;
+  $('posModal').classList.add('open');
+}
+function closePosModal() { $('posModal').classList.remove('open'); editingPosId = null; }
+function savePosModal() {
+  const p = state.positions.find(x => x.id === editingPosId);
+  if (!p) return closePosModal();
+  const name = $('posEditName').value.trim();
+  if (!name) { $('posEditName').focus(); return; }
+  const newLen = +$('posEditShiftLen').value || p.shiftLen;
+  const newCount = +$('posEditCount').value || p.count;
+  // שינוי אורך משמרת/כמות משנה את מבנה המשמרות — השיבוץ הקיים כבר לא תואם
+  const structChanged = (newLen !== +p.shiftLen || newCount !== +p.count) && !!state.schedule;
+  if (structChanged && !confirm('שינוי אורך המשמרת או כמות הלוחמים משנה את מבנה המשמרות.\nהשיבוץ הקיים לא יתאים ותצטרך ליצור שיבוץ מחדש.\n\nלהמשיך?')) return;
+
+  p.name = name;
+  p.type = $('posEditType').value;
+  p.shiftLen = newLen;
+  p.count = newCount;
+  ensureShifts();
+  recomputeFlags(); // שינוי סוג (למשל לכיתת כוננות) מעדכן מיד את דגלי החריגה
+  commit();
+  closePosModal();
+  if (structChanged) alert('העמדה עודכנה. מומלץ ללחוץ "צור שיבוץ אוטומטי" כדי לבנות שיבוץ תואם.');
+}
+
 function closeEditModal() { $('editModal').classList.remove('open'); editingKey = null; }
 function saveEditModal() {
   if (!editingKey) return;
@@ -725,6 +763,11 @@ function bindEvents() {
   $('blockModalSave').onclick = saveBlockModal;
   $('blockModalCancel').onclick = closeBlockModal;
   $('blockModal').onclick = e => { if (e.target === $('blockModal')) closeBlockModal(); };
+
+  // מודאל עריכת עמדה/משימה
+  $('posEditSave').onclick = savePosModal;
+  $('posEditCancel').onclick = closePosModal;
+  $('posModal').onclick = e => { if (e.target === $('posModal')) closePosModal(); };
 
   // סטטיסטיקות
   $('statsSource').onchange = renderStats;
