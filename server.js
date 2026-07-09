@@ -69,7 +69,8 @@ const MIME = {
   '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 function sendJson(res, code, obj) {
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+  // תשובות API לעולם לא נשמרות במטמון (מונע מצב/הרשאה ישנים מהדפדפן)
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(obj));
 }
 function readBody(req, cb) {
@@ -85,7 +86,11 @@ function serveStatic(req, res) {
   if (!STATIC_FILES.has(name)) { res.writeHead(404); res.end('Not found'); return; }
   fs.readFile(path.join(ROOT, name), (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(name).toLowerCase()] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(name).toLowerCase()] || 'application/octet-stream',
+      // הדפדפן חייב לאמת מול השרת בכל טעינה — כך עדכוני קוד/עיצוב מופיעים מיד ולא נתקעים במטמון
+      'Cache-Control': 'no-cache, must-revalidate',
+    });
     res.end(data);
   });
 }
