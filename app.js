@@ -247,9 +247,10 @@ function recomputeFlags() {
         if (o === sl) continue;
         if (o.start < sl.end && o.end > sl.start) { sl.overlap = true; sl.violation = true; }
         else {
+          // מעבר/חילוף מול כיתת כוננות אינו נחשב "מנוחה קצרה" — הכוננות היא מנוחה/זמינות
+          if (isStandbyPos(sl.posId) || isStandbyPos(o.posId)) continue;
           const gap = o.end <= sl.start ? sl.start - o.end : o.start - sl.end;
-          const reqPair = Math.min(slotRestMs(sl), slotRestMs(o)); // כוננות מקילה על דרישת המנוחה
-          if (gap < reqPair) sl.violation = true;
+          if (gap < +state.config.restHours * HOUR) sl.violation = true;
         }
       }
     }
