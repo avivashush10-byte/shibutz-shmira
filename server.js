@@ -78,7 +78,7 @@ function readBody(req, cb) {
   req.on('end', () => cb(body));
 }
 // רק קבצי הסטטיק המותרים מוגשים — כך קבצי קוד/נתונים (server.js, state.json וכו') לא נחשפים
-const STATIC_FILES = new Set(['index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg']);
+const STATIC_FILES = new Set(['index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'logo.png']);
 function serveStatic(req, res) {
   let name = decodeURIComponent(req.url.split('?')[0]).replace(/^\//, '');
   if (name === '') name = 'index.html';
