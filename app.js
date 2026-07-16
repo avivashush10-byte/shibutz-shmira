@@ -82,10 +82,19 @@ function isStandbyPos(posId) {
   const p = state.positions.find(x => x.id === posId);
   return !!(p && p.type === 'כיתת כוננות');
 }
+// עמדה "נעולה": אורך המשמרת מכסה את כל הסבב => משמרת אחת, בלי חילופים.
+// הלוחמים בה נעולים לכל הסבב ואינם כפופים למגבלת המנוחה, ושאר הלוחמים עושים סבב מלא על היתר.
+function isLockedPos(posId) {
+  const p = state.positions.find(x => x.id === posId);
+  if (!p) return false;
+  return +p.shiftLen >= +state.config.durationHours;
+}
 // דרישת המנוחה (מילישניות) של משמרת: עמדה/משימה רגילה = מנוחה מלאה; כוננות = הרבה פחות
 // (כוננות יום כמעט ללא מנוחה; כוננות לילה מינימום 2-3 שעות)
 const STANDBY_REST_DAY_H = 0; // כוננות יום — לא צריך מנוחה מיוחדת
 function slotRestMs(sl) {
+  // עמדה נעולה (משמרת = כל הסבב): הלוחמים שם נעולים ואינם כפופים כלל למגבלת המנוחה
+  if (isLockedPos(sl.posId)) return 0;
   if (!isStandbyPos(sl.posId)) return (+state.config.restHours) * HOUR;
   const nightH = state.config.standbyRestNight != null ? +state.config.standbyRestNight : 3;
   return (slotIsNight(sl.start, sl.end) ? nightH : STANDBY_REST_DAY_H) * HOUR;
@@ -193,11 +202,14 @@ function generateSchedule(keepManual) {
     T.pos[pn] = (T.pos[pn] || 0) + 1;
   });
 
-  // סדר השיבוץ: קודם עמדות/משימות רגילות (ש.ג וכו'), ואחר כך כיתת כוננות.
-  // כך העמדות התובעניות מקבלות עדיפות מכל מצבת הלוחמים, והכוננות משמשת מאגר גמיש
-  // שסופג את מי שפנוי — כלומר מי שיורד מעמדה זמין לכוננות, ולוחם מהכוננות זמין לעמדה.
+  // סדר השיבוץ לפי "חוזק" העמדה:
+  // 1) עמדה נעולה (משמרת = כל הסבב, למשל כוננות 24ש') — החזקה ביותר, מאויישת ראשונה מכל המצבת
+  //    כי לא יכולים להיות בה חוסרים; הלוחמים שם נעולים לכל הסבב בלי חילופים.
+  // 2) עמדות/משימות רגילות (ש.ג, חמ"ל וכו') — שאר הלוחמים עושים עליהן סבב מלא.
+  // 3) כיתת כוננות רגילה (לא נעולה) — מאגר גמיש שסופג את מי שפנוי.
+  const rank = posId => isLockedPos(posId) ? 0 : (isStandbyPos(posId) ? 2 : 1);
   const empties = Object.values(slots).filter(sl => !sl.soldierId)
-    .sort((a, b) => (isStandbyPos(a.posId) - isStandbyPos(b.posId)) || a.start - b.start || a.posId.localeCompare(b.posId) || a.seat - b.seat);
+    .sort((a, b) => (rank(a.posId) - rank(b.posId)) || a.start - b.start || a.posId.localeCompare(b.posId) || a.seat - b.seat);
 
   for (const sl of empties) {
     const pn = posName(sl.posId), night = slotIsNight(sl.start, sl.end);
@@ -262,8 +274,9 @@ function recomputeFlags() {
         if (o === sl) continue;
         if (o.start < sl.end && o.end > sl.start) { sl.overlap = true; sl.violation = true; }
         else {
-          // מעבר/חילוף מול כיתת כוננות אינו נחשב "מנוחה קצרה" — הכוננות היא מנוחה/זמינות
-          if (isStandbyPos(sl.posId) || isStandbyPos(o.posId)) continue;
+          // מעבר/חילוף מול כיתת כוננות אינו נחשב "מנוחה קצרה" — הכוננות היא מנוחה/זמינות.
+          // עמדה נעולה (24ש') פטורה לחלוטין ממגבלת המנוחה — לא מסמנים אותה באדום.
+          if (isStandbyPos(sl.posId) || isStandbyPos(o.posId) || isLockedPos(sl.posId) || isLockedPos(o.posId)) continue;
           const gap = o.end <= sl.start ? sl.start - o.end : o.start - sl.end;
           if (gap < +state.config.restHours * HOUR) sl.violation = true;
         }
@@ -276,9 +289,11 @@ function recomputeFlags() {
 function computeIssues() {
   const slots = Object.values(state.schedule.slots);
   const total = slots.length;
-  // חוסר "אמיתי" = עמדה/משימה שאינה מאויישת. משבצת כוננות ריקה אינה חוסר — הכוננות גמישה.
-  const unfilled = slots.filter(s => !s.soldierId && !isStandbyPos(s.posId)).length;
-  const unfilledStandby = slots.filter(s => !s.soldierId && isStandbyPos(s.posId)).length;
+  // חוסר "אמיתי" = עמדה/משימה שאינה מאויישת. משבצת כוננות ריקה אינה חוסר — הכוננות גמישה,
+  // אבל עמדה נעולה (24ש') חייבת להיות מאויישת תמיד — חוסר בה הוא קריטי גם אם היא כוננות.
+  const unfilled = slots.filter(s => !s.soldierId && (!isStandbyPos(s.posId) || isLockedPos(s.posId))).length;
+  const unfilledLocked = slots.filter(s => !s.soldierId && isLockedPos(s.posId)).length;
+  const unfilledStandby = slots.filter(s => !s.soldierId && isStandbyPos(s.posId) && !isLockedPos(s.posId)).length;
   const restViol = slots.filter(s => s.soldierId && s.violation && !s.overlap).length;
   const overlaps = slots.filter(s => s.overlap).length;
   const absentMap = {}; state.soldiers.forEach(s => absentMap[s.id] = !s.present);
@@ -291,7 +306,7 @@ function computeIssues() {
   needed = Math.ceil(needed);
   const presentCount = state.soldiers.filter(s => s.present).length;
 
-  return { total, unfilled, unfilledStandby, restViol, overlaps, absentAssigned, needed, presentCount };
+  return { total, unfilled, unfilledLocked, unfilledStandby, restViol, overlaps, absentAssigned, needed, presentCount };
 }
 
 function renderWarnings() {
@@ -310,8 +325,10 @@ function renderWarnings() {
   }
 
   const html = [];
-  if (i.unfilled > 0)
-    html.push(`<div class="warn err"><span class="ic">⛔</span><div><strong>חוסר לוחמים: ${i.unfilled} משבצות לא מאוישות</strong>אין מספיק לוחמים נוכחים לכיסוי כל העמדות בו־זמנית.</div></div>`);
+  if (i.unfilledLocked > 0)
+    html.push(`<div class="warn err"><span class="ic">🔒</span><div><strong>קריטי: ${i.unfilledLocked} משבצות בעמדה נעולה (24 ש') לא מאוישות</strong>עמדה שמשמרתה כל הסבב חייבת להיות מאויישת במלואה. אין מספיק לוחמים נוכחים — הוסף לוחמים, סמן חסרים כנוכחים, או הפחת את מספר הלוחמים הנדרשים בה.</div></div>`);
+  if (i.unfilled - i.unfilledLocked > 0)
+    html.push(`<div class="warn err"><span class="ic">⛔</span><div><strong>חוסר לוחמים: ${i.unfilled - i.unfilledLocked} משבצות לא מאוישות</strong>אין מספיק לוחמים נוכחים לכיסוי כל העמדות בו־זמנית.</div></div>`);
   if (i.overlaps > 0)
     html.push(`<div class="warn err"><span class="ic">⚠️</span><div><strong>${i.overlaps} משבצות בכפילות</strong>לוחם משובץ לשתי משימות חופפות בזמן — כנראה עקב עדכון ידני. יש לתקן.</div></div>`);
   if (i.restViol > 0)
